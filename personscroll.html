@@ -1,0 +1,910 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pixel Grid → Scatter + Tooltip (스크롤 완벽!)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    html, body {margin:0; padding:0; height:2000vh; background:#111;}
+    canvas {position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:#111; cursor:pointer; z-index:1;}
+    #tooltip {
+  position: fixed;
+  background: #ffffff33;
+  color: #ff6060;
+  border-radius: 16px;
+  padding: 18px 24px 18px 18px;
+  box-shadow: 0 4px 18px rgba(205, 255, 5, 0.755);
+  display: none;
+  font-size: 16px;
+  z-index: 10;
+  width: 420px; max-width: 90vw; min-width: 180px;
+  min-height: 60px; max-height: 320px;  /* 핵심! */
+  overflow: visible;
+  pointer-events: auto; transition: opacity 0.2s;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 24px;
+  box-sizing: border-box;
+}
+#tooltip img {
+  display: block;
+  width: 130px;   /* 약간 줄여줌 */
+  min-width: 90px;
+  max-width: 130px;
+  height: auto;
+  max-height: 184px;  /* 최대 높이 제한! */
+  border-radius: 7px;
+  margin: 0;
+  object-fit: cover;
+  box-shadow: 0 1px 4px #0002;
+  background: #fff;
+}
+#tooltip .tooltip-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  max-height: 184px;   /* 이미지와 맞춤 */
+  overflow: auto;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+    canvas { will-change: transform; }
+  </style>
+</head>
+<body>
+ <a href="index.html" style="position:fixed; top:24px; left:24px; font-size:18px; color:#ffffff77; text-decoration:none; z-index:9999; font-family:'IBM Plex Mono', monospace;">← mainpage</a>
+
+<canvas id="canvas" width="1200" height="1000"></canvas>
+<div id="tooltip"></div>
+<script>
+
+// 대표색 뽑는 함수 (img 엘리먼트, 콜백)
+function getAverageColor(img, callback) {
+  // 이미지가 아직 로딩 안 됐으면 나중에 호출 (재귀)
+  if (!img.complete) {
+    img.onload = () => getAverageColor(img, callback);
+    img.onerror = () => callback([200,200,200]);
+    return;
+  }
+  let w = 12, h = 12;
+  let canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  let ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  let data = ctx.getImageData(0, 0, w, h).data;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i+1];
+    b += data[i+2];
+  }
+  let len = data.length / 4;
+  r = Math.round(r / len);
+  g = Math.round(g / len);
+  b = Math.round(b / len);
+  callback([r, g, b]);
+}
+
+// rgb → hsl
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  let max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max + min) / 2;
+  if(max === min){
+    h = s = 0;
+  } else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch(max){
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h*360, s*100, l*100];
+}
+
+// hsl → rgb
+function hslToRgb(h, s, l) {
+  h /= 360; s /= 100; l /= 100;
+  let r, g, b;
+  if(s === 0){
+    r = g = b = l;
+  } else {
+    function hue2rgb(p, q, t){
+      if(t < 0) t += 1;
+      if(t > 1) t -= 1;
+      if(t < 1/6) return p + (q - p) * 6 * t;
+      if(t < 1/2) return q;
+      if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    }
+    let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    let p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+}
+
+
+
+
+const image = new Image(); image.src = 'boy.jpg'; // 이미지 경로!
+const gridSize = 6, FRAME = 600, GAP = 0.5;
+const resolutions = [256,128,64,32,16,6];
+let currentRes = resolutions[0];
+
+const imagesetsTop = [
+  [ // main-part
+{
+    url: "suit_top/top01.jpeg",
+    similarity: 0.96,
+    prompt: "Child-sized vintage blazer on foliage background",
+    description: "A soft-toned brown blazer on a child mannequin placed in a natural outdoor setting, evoking nostalgia."
+  },
+  {
+    url: "suit_top/top02.jpeg",
+    similarity: 0.91,
+    prompt: "Retro check suit with hand gesture",
+    description: "A black-and-white close-up of a check-patterned blazer with classic tailoring and a vintage feel."
+  },
+  {
+    url: "suit_top/top03.jpeg",
+    similarity: 0.90,
+    prompt: "Plaid double-breasted knit jacket close-up",
+    description: "Patterned blazer in warm tones with a textured knit-like weave, captured in mid-action."
+  },
+  {
+    url: "suit_top/top04.jpeg",
+    similarity: 0.82,
+    prompt: "Lightweight beige jacket in the woods",
+    description: "A casual jacket styled outdoors with earthy surroundings, combining a relaxed cut and natural fabric."
+  },
+  {
+    url: "suit_top/top05.jpeg",
+    similarity: 0.60,
+    prompt: "Brown herringbone coat at night",
+    description: "Textured brown outerwear with visible weave, worn in a nighttime urban setting."
+  },
+  {
+    url: "suit_top/top06.jpeg",
+    similarity: 0.33,
+    prompt: "Pale beige modern jacket",
+    description: "Structured yet minimalist light-toned blazer with soft collar, styled for modern formal looks."
+  },
+  {
+    url: "suit_top/top07.jpeg",
+    similarity: 0.45,
+    prompt: "Casual blue jacket in outdoor setting",
+    description: "Bright blue jacket paired with jeans, exuding modern casual confidence in daylight."
+  },
+  {
+    url: "suit_top/top08.jpeg",
+    similarity: 0.40,
+    prompt: "Monochrome shirt and blazer studio portrait",
+    description: "Clean, high-contrast fashion portrait with slim-cut jacket and no tie."
+  },
+  {
+    url: "suit_top/top09.jpeg",
+    similarity: 0.37,
+    prompt: "Classic light gray business suit",
+    description: "Smooth fabric in light gray tones, showcasing a timeless business ensemble."
+  },
+  {
+    url: "suit_top/top10.jpeg",
+    similarity: 0.35,
+    prompt: "Modern gray peak lapel suit",
+    description: "A tailored light gray suit with visible buttons and elegant peak lapel lines."
+  },
+  {
+    url: "suit_top/top11.jpeg",
+    similarity: 0.39,
+    prompt: "Navy blue suit with watch detail",
+    description: "Close-up of wristwatch and blazer sleeve, highlighting accessories in a formal outfit."
+  },
+  {
+    url: "suit_top/top12.jpeg",
+    similarity: 0.50,
+    prompt: "Pinstripe suit on escalator",
+    description: "Classic vertical stripe suit in dark navy, photographed in a dynamic urban interior."
+  },
+  {
+    url: "suit_top/top13.jpeg",
+    similarity: 0.26,
+    prompt: "Rust orange blazer with rainbow tie",
+    description: "Bright accent tie on a textured vintage-inspired blazer with bold color play."
+  },
+  {
+    url: "suit_top/top14.jpeg",
+    similarity: 0.42,
+    prompt: "Navy suit with boutonnière",
+    description: "Groom-style dark blue suit with boutonnière detail, conveying modern formality."
+  },
+  {
+    url: "suit_top/top15.jpeg",
+    similarity: 0.20,
+    prompt: "High-contrast shirt and dark jacket",
+    description: "Minimalist setting with high shadow contrast on black suit and white shirt."
+  },
+  {
+    url: "suit_top/top16.jpeg",
+    similarity: 0.95,
+    prompt: "Vintage children's wool coat",
+    description: "A young girl in a red coat and beret, surrounded by muted-toned adults — deeply nostalgic and textured."
+  },
+  {
+    url: "suit_top/top17.jpeg",
+    similarity: 0.28,
+    prompt: "Formal suit seated posture",
+    description: "Mid-action capture of a suited figure seated, focused on fabric lines and formality."
+  },
+  {
+    url: "suit_top/top18.jpeg",
+    similarity: 0.22,
+    prompt: "Casual streetwear blazer with denim",
+    description: "A fusion of casual and formal wear, pairing a dark blazer with light-washed jeans."
+  },
+  {
+    url: "suit_top/top19.jpeg",
+    similarity: 0.43,
+    prompt: "Greenish textured suit with timepiece",
+    description: "Close-up of a subtly patterned blazer with a dark shirt and elegant wristwatch."
+  },
+  {
+    url: "suit_top/top20.jpeg",
+    similarity: 0.92,
+    prompt: "Brown retro indoor blazer with pipe",
+    description: "Vintage-style brown blazer with wide lapels, pipe in hand, evoking mid-century leisure."
+  }
+],
+
+  [ // color
+       {
+    "url": "suit_color/color01.jpeg",
+    "similarity": 0.99,
+    "prompt": "Soft sepia room lighting with delicate warm shadows",
+    "description": "Warm monochrome interior with soft browns and gentle light diffusion reminiscent of analog photography."
+  },
+  {
+    "url": "suit_color/color02.jpeg",
+    "similarity": 0.85,
+    "prompt": "Muted black-brown river scene under foggy dusk",
+    "description": "Desaturated scene blending black and brown tones, creating a quiet and moody vintage mood."
+  },
+  {
+    "url": "suit_color/color03.jpeg",
+    "similarity": 0.88,
+    "prompt": "Golden-hour interior silhouette with amber glow",
+    "description": "Warm bronze lighting casting strong shadows, evoking nostalgia and cinematic atmosphere."
+  },
+  {
+    "url": "suit_color/color04.jpeg",
+    "similarity": 0.61,
+    "prompt": "Bright autumn woods with golden-orange palette",
+    "description": "Vivid and warm autumn light with saturated golds and oranges; less desaturated but still nostalgic."
+  },
+  {
+    "url": "suit_color/color05.jpeg",
+    "similarity": 0.80,
+    "prompt": "Circular fisheye with golden sepia reflection",
+    "description": "Distorted glass world in aged gold tones, giving off retro lens and filmic warmth."
+  },
+  {
+    "url": "suit_color/color06.jpeg",
+    "similarity": 0.99,
+    "prompt": "Retro fashion portrait in creamy golden tones",
+    "description": "Classic portrait bathed in light beige and gold, with soft focus and 1950s charm."
+  },
+  {
+    "url": "suit_color/color07.jpeg",
+    "similarity": 0.95,
+    "prompt": "Sepia-toned children’s portrait from old photograph",
+    "description": "Soft warm browns and creamy highlights simulate a faded vintage family photo."
+  },
+  {
+    "url": "suit_color/color08.jpeg",
+    "similarity": 0.30,
+    "prompt": "Neutral workspace with wood textures under natural light",
+    "description": "Modern warm tone, but lacks the softness and desaturation of vintage filters."
+  },
+  {
+    "url": "suit_color/color09.jpeg",
+    "similarity": 0.40,
+    "prompt": "Golden backlit forest scene with slight bloom",
+    "description": "Warm sunflare and deep contrast, but more modern and saturated in tone."
+  },
+  {
+    "url": "suit_color/color10.jpeg",
+    "similarity": 0.25,
+    "prompt": "Polaroid photo stack on reddish wood table",
+    "description": "High contrast and sharpness with strong red tones; lacks the muted, aged feel."
+  }
+  ],
+  
+  [ // style
+  { url: "suit_style/style01.jpeg", similarity: 0.01, prompt: "Faded pastel wool suit in 1950s movie style", description: "A soft pastel-toned wool suit top with slight film grain and retro cinematic glow." },
+  { url: "suit_style/style02.jpeg", similarity: 0.26, prompt: "Monochrome kids-era suit, oldschool street fashion", description: "Black-and-white suit photo of a mid-century streetwear look for boys in formal jackets." },
+  { url: "suit_style/style03.jpeg", similarity: 0.52, prompt: "Sun-faded cotton suit with cicada summer tones", description: "A cotton suit top in warm washed-out colors, evoking a nostalgic 1940s summer street scene." },
+  { url: "suit_style/style04.jpeg", similarity: 0.89, prompt: "Mid-century charcoal blazer, soft blur film tone", description: "A charcoal grey blazer with slightly aged tones and natural vignetting, retro school style." },
+  { url: "suit_style/style05.jpeg", similarity: 0.68, prompt: "Textured tweed jacket with 8mm film style grain", description: "Tweed suit top, presented in a worn analog film aesthetic with subtle dust specks." },
+  { url: "suit_style/style06.jpeg", similarity: 0.81, prompt: "High-contrast b&w double-breasted blazer", description: "Formal suit jacket rendered in harsh monochrome, evoking a 1940s children's film still." },
+  { url: "suit_style/style07.jpeg", similarity: 0.76, prompt: "Desaturated khaki blazer with sunny tone fade", description: "Vintage children’s blazer washed in sun-drenched yellow fade, muted saturation." },
+  { url: "suit_style/style08.jpeg", similarity: 0.22, prompt: "Loose-fitted retro jacket in dusted green tones", description: "Oldschool green jacket styled for a child, in slightly wrinkled and color-faded fabric." },
+  { url: "suit_style/style09.jpeg", similarity: 0.70, prompt: "Sharp schoolboy wool blazer in retro warm filter", description: "A tidy wool blazer for boys, with warm light leaks and a hint of mid-century nostalgia." },
+  { url: "suit_style/style10.jpeg", similarity: 0.47, prompt: "Discolored navy suit with worn textures", description: "Suit top with uneven fading and distressed shoulder lines, resembling old yearbook photos." },
+  { url: "suit_style/style11.jpeg", similarity: 0.49, prompt: "Wrinkled cotton blazer from old film archive", description: "A wrinkled suit top in light fabric, styled as if from a 1940s black-and-white photo reel." },
+  { url: "suit_style/style12.jpeg", similarity: 0.81, prompt: "Child’s Sunday best suit in filmic sepia tones", description: "Sepia-tinted jacket, slightly oversized, typical of children's wear in mid-century family photos." },
+  { url: "suit_style/style13.jpeg", similarity: 0.66, prompt: "Mid-century prep style suit with retro grain", description: "Classic preppy jacket with slightly yellowed film grain and old classroom lighting." },
+  { url: "suit_style/style14.jpeg", similarity: 0.43, prompt: "Hand-me-down blazer with faded edges", description: "Frayed lapels and uneven stitching, captured in low-contrast dusty tones like an old diary shot." },
+  { url: "suit_style/style15.jpeg",similarity: 0.01,prompt: "Victorian-style waistcoat with ruffled collar and neat tailoring",
+  description: "Detailed 19th-century jacket with short trousers and a soft ruffled collar, resembling a Pixar-style whimsical boy portrait."},
+  { url: "suit_style/style16.jpeg", similarity: 0.09, prompt: "Modern toddler's black-and-white casual shirt in outdoor light",
+  description: "A full-body view of a toddler in a two-tone shirt and jeans, standing confidently in a skating park, captured with soft cinematic tone."
+}
+  ]
+];
+
+const imagesetsBottom = [
+  [ // main-part
+      {
+    url: "pants/pants01.jpeg",
+    similarity: 0.90,
+    prompt: "Close-up of luxurious wool suit pants",
+    description: "A pair of premium wool suit pants, perfectly pressed, with a subtle pinstripe pattern. Soft lighting reveals the fine tailoring and delicate texture."
+  },
+  {
+    url: "pants/pants02.jpeg",
+    similarity: 0.35,
+    prompt: "Urban commuter in navy chinos",
+    description: "Cropped view of a man in casual navy chinos with a messenger bag, walking along a station platform."
+  },
+  {
+    url: "pants/pants03.jpeg",
+    similarity: 0.55,
+    prompt: "Wide-legged trousers in motion",
+    description: "Flared pants captured mid-step, emphasizing movement and bold retro style."
+  },
+  {
+    url: "pants/pants04.jpeg",
+    similarity: 0.60,
+    prompt: "Slim beige dress pants",
+    description: "Slim-fit beige trousers with clean tailoring and dark leather shoes, captured in indoor lighting."
+  },
+  {
+    url: "pants/pants05.jpeg",
+    similarity: 0.92,
+    prompt: "Formal charcoal trousers with belt",
+    description: "A sharply pressed pair of charcoal slacks styled with a clean white shirt and watch."
+  },
+  {
+    url: "pants/pants06.jpeg",
+    similarity: 0.65,
+    prompt: "Soft-toned wool pants in home interior",
+    description: "Comfortable pants with a gentle drape, styled in a cozy room with warm lighting."
+  },
+  {
+    url: "pants/pants07.jpeg",
+    similarity: 0.20,
+    prompt: "Decorative denim with floral stitching",
+    description: "Relaxed jeans adorned with embroidered flowers, styled for a playful indoor scene."
+  },
+  {
+    url: "pants/pants08.jpeg",
+    similarity: 0.88,
+    prompt: "Muted gray suit with soft fabric folds",
+    description: "A tailored two-piece featuring high-waisted gray pants in a relaxed yet formal silhouette."
+  },
+  {
+    url: "pants/pants09.jpeg",
+    similarity: 0.15,
+    prompt: "Bold orange corduroy pants in motion",
+    description: "Cropped walking shot emphasizing textured, colorful pants with wide hem."
+  },
+  {
+    url: "pants/pants10.jpeg",
+    similarity: 0.89,
+    prompt: "Classic patterned business slacks",
+    description: "Retro plaid suit trousers paired with a matching blazer in an office environment."
+  },
+  {
+    url: "pants/pants11.jpeg",
+    similarity: 0.28,
+    prompt: "Loose vintage jeans on playground",
+    description: "A worn-in pair of light jeans in an outdoor leisure setting with a nostalgic tone."
+  },
+  {
+    url: "pants/pants12.jpeg",
+    similarity: 0.45,
+    prompt: "Cropped blue pants with casual shoes",
+    description: "Relaxed semi-casual outfit with blue ankle-length pants and sandals on dry grass."
+  },
+  {
+    url: "pants/pants13.jpeg",
+    similarity: 0.91,
+    prompt: "Beige tailored pants in movement",
+    description: "Elegant cream trousers with clean creases and smooth fabric, paired with a coat and clutch bag."
+  },
+  {
+    url: "pants/pants14.jpeg",
+    similarity: 0.10,
+    prompt: "Child in school uniform pants",
+    description: "A child dressed in gray slacks and sweater, sipping from a cup near a school fence."
+  },
+  {
+    url: "pants/pants15.jpeg",
+    similarity: 0.87,
+    prompt: "Golden tan wool trousers indoors",
+    description: "Soft midtone wool trousers with natural folds, styled in a vintage shop interior."
+  },
+  {
+    url: "pants/pants16.jpeg",
+    similarity: 0.93,
+    prompt: "Dark green velvet suit pants",
+    description: "Deep green pants with a velvet sheen and matching blazer, suggesting luxury tailoring."
+  },
+  {
+    url: "pants/pants17.jpeg",
+    similarity: 0.95,
+    prompt: "Classic dark wool slacks in formal room",
+    description: "Traditional black trousers worn with a blazer in a formal setting, evoking timeless tailoring."
+  },
+  {
+    url: "pants/pants18.jpeg",
+    similarity: 0.34,
+    prompt: "Yellow fashion-forward pantsuit",
+    description: "A bright yellow coordinated set with bold styling, veering into avant-garde territory."
+  },
+  {
+    url: "pants/pants19.jpeg",
+    similarity: 0.08,
+    prompt: "Colorful experimental trousers outdoors",
+    description: "Group of people in saturated red, blue, and green pants standing on grass, highly stylized."
+  },
+  {
+    url: "pants/pants20.jpeg",
+    similarity: 0.12,
+    prompt: "Youthful leisurewear in editorial setting",
+    description: "Two people in playful casual trousers in a minimal studio space, staged for a lifestyle shoot."
+  }
+  ],
+
+
+  [ // color
+     {
+    url: 'p_color/color01.jpg',
+    similarity: 0.18,
+    prompt: "Soft olive coat in forest lighting",
+    description: "Natural green-brown hues in a sun-dappled forest, moderately muted and warm."
+  },
+  {
+    url: 'p_color/color02.jpg',
+    similarity: 0.09,
+    prompt: "Wet asphalt and shadow",
+    description: "Cool blue-grays with reflective pavement and high contrast black clothing."
+  },
+  {
+    url: 'p_color/color03.jpg',
+    similarity: 0.56,
+    prompt: "Golden autumn shade and light coat",
+    description: "Warm but slightly saturated tree hues with pale outerwear against fall foliage."
+  },
+  {
+    url: 'p_color/color04.jpg',
+    similarity: 0.14,
+    prompt: "Minimal beige with delicate shadow",
+    description: "Faded khaki-toned background and small objects casting warm studio shadows."
+  },
+  {
+    url: 'p_color/color05.jpg',
+    similarity: 0.92,
+    prompt: "Dusty tobacco sepia winter scene",
+    description: "Strong sepia brown over desaturated grayscale with foggy edges — rich and historic."
+  },
+  {
+    url: 'p_color/color06.jpg',
+    similarity: 0.41,
+    prompt: "Muted golden light through curtains",
+    description: "Soft warm amber tones, nostalgic but slightly more saturated than traditional sepia."
+  },
+  {
+    url: 'p_color/color07.jpg',
+    similarity: 0.95,
+    prompt: "Worn oak-toned family portrait",
+    description: "Heavily aged brown paper tone with strong umber presence and faded edges."
+  },
+  {
+    url: 'p_color/color08.jpg',
+    similarity: 0.74,
+    prompt: "Rainy street in smoky film sepia",
+    description: "Faded monochrome with dusty brown wash and fine grain; evocative of 1930s."
+  },
+  {
+    url: 'p_color/color09.jpg',
+    similarity: 0.68,
+    prompt: "Golden haze over pine tree lights",
+    description: "Light yellow-tan glow with misty depth, leaning into low-saturation warm hues."
+  },
+  {
+    url: 'p_color/color10.jpg',
+    similarity: 0.33,
+    prompt: "Cinematic spotlight on grayscale silhouette",
+    description: "Sharp black and white with minimal brown influence — high contrast editorial lighting."
+  }
+  ],
+
+  
+  [ // style
+      {
+    url: 'p_style/style01.jpeg',
+    similarity: 0.27,
+    prompt: "Mid-century family scene with parasol",
+    description: "Soft-toned vintage-like composition but slightly illustrative in texture and finish."
+  },
+  {
+    url: 'p_style/style02.jpeg',
+    similarity: 0.91,
+    prompt: "Warm-toned film capture of a 50s crowd",
+    description: "Realistic depth, shallow focus, and warm grain evoke 1950s color film photography."
+  },
+  {
+    url: 'p_style/style03.jpeg',
+    similarity: 0.94,
+    prompt: "Street dance in 1940s grayscale motion",
+    description: "Black-and-white photo with realistic movement blur, classic urban documentary feel."
+  },
+  {
+    url: 'p_style/style04.jpeg',
+    similarity: 0.08,
+    prompt: "Retro-style illustration of a girl in blue",
+    description: "Digitally stylized with flat tones and brush-like shadows — not photographic."
+  },
+  {
+    url: 'p_style/style05.jpeg',
+    similarity: 0.33,
+    prompt: "Color-shifted retro group photo",
+    description: "Blended real photography with tinted filters, but heavily processed."
+  },
+  {
+    url: 'p_style/style06.jpeg',
+    similarity: 0.74,
+    prompt: "Sepia storefront with classic signage",
+    description: "Warmly faded signage and shadow casting evokes film print from the mid-1900s."
+  },
+  {
+    url: 'p_style/style07.jpeg',
+    similarity: 0.85,
+    prompt: "Black-and-white street photo with two boys",
+    description: "Authentic monochrome candid scene with natural lighting and grainy shadows."
+  },
+  {
+    url: 'p_style/style08.jpeg',
+    similarity: 0.93,
+    prompt: "Postwar-era couple on city steps",
+    description: "Realistic tonal range, soft contrast and mild grain typical of 1950s street portraits."
+  },
+  {
+    url: 'p_style/style09.jpeg',
+    similarity: 0.30,
+    prompt: "Half-tone propaganda-style duo-tone photo",
+    description: "Flatly colorized image with screen print effects — vintage in theme but not photographic."
+  },
+  {
+    url: 'p_style/style10.jpeg',
+    similarity: 0.76,
+    prompt: "Busy street scene with retro blur",
+    description: "Color film style with motion blur and warm haze, reminiscent of analog handheld shots."
+  }
+  ]
+];
+
+const regions = [
+  {
+    name: "상의",
+    boxes: [ [1,3],[1,4],[2,3],[3,3],[2,4],[3,4],[4,3],[4,4] ],
+    imagesets: imagesetsTop
+  },
+  {
+    name: "하의",
+    boxes: [ [2,5],[3,5],[2,6],[3,6],[2,7],[3,7],[2,8],[3,8] ],
+    imagesets: imagesetsBottom
+  }
+];
+
+const revealSteps = [6,12,18,24,32,44,56,72,96,128,180,256,512,'original'];
+const maxRevealStep = revealSteps.length-1;
+let canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+let pixelData = null, fit = {}, hoveredBox = null, hoveredRegion = null;
+let scatterRegion = null, viewState = 'grid', scatterObjs=[], scatterSetIdx=0, revealIdx=0, showColorBox=false, scatterHoverIdx=-1;
+let tooltip = document.getElementById('tooltip'), tooltipTimer = null, isTooltipActive = false;
+
+tooltip.addEventListener('mouseenter', () => {
+  isTooltipActive = true;
+  if (tooltipTimer) clearTimeout(tooltipTimer);
+});
+tooltip.addEventListener('mouseleave', () => {
+  isTooltipActive = false;
+  if (tooltipTimer) clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(() => {
+    if (!isTooltipActive) tooltip.style.display = 'none';
+  }, 700);
+});
+
+function calcFit(){
+  let iw=image.width, ih=image.height, aspect=iw/ih, dw=FRAME, dh=FRAME;
+  if(aspect>1){ dh=FRAME/aspect; } else{ dw=FRAME*aspect; }
+  fit = { sx:0, sy:0, sw:iw, sh:ih, dx:(canvas.width-FRAME)/2+(FRAME-dw)/2, dy:(canvas.height-FRAME)/2+(FRAME-dh)/2, dw, dh };
+}
+function getPixelData(res){
+  let temp = document.createElement('canvas');
+  temp.width = res;
+  temp.height = Math.round(res * image.height/image.width);
+  temp.getContext('2d').drawImage(image,0,0,image.width,image.height,0,0,temp.width,temp.height);
+  return temp.getContext('2d').getImageData(0,0,temp.width,temp.height);
+}
+function drawGrid(res){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle='#111'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const cols = res, rows = pixelData.height;
+  const boxW = fit.dw / cols, boxH = fit.dh / rows;
+  for(let y=0; y<rows; y++) for(let x=0; x<cols; x++){
+    let idx=(y*cols+x)*4, r=pixelData.data[idx],g=pixelData.data[idx+1],b=pixelData.data[idx+2],a=pixelData.data[idx+3]/255;
+    let gap = (res===gridSize?GAP:0), opacity=1;
+    if(res===gridSize && hoveredRegion){
+      let inRegion = hoveredRegion.boxes.some(([bx,by])=>bx===x&&by===y);
+      opacity = inRegion ? 1 : 0.32;
+    }
+    ctx.globalAlpha=opacity;
+    ctx.fillStyle=`rgba(${r},${g},${b},${a})`;
+    ctx.fillRect(fit.dx+x*boxW, fit.dy+y*boxH, boxW-gap, boxH-gap);
+  }
+  ctx.globalAlpha=1;
+  if(res===gridSize && hoveredRegion){
+    for(const [x,y] of hoveredRegion.boxes){
+      ctx.save(); ctx.globalAlpha=1;
+      let sx = image.width/gridSize*x, sy = image.height/pixelData.height*y;
+      let sw = image.width/gridSize, sh = image.height/pixelData.height;
+      let dx = fit.dx+x*boxW, dy = fit.dy+y*boxH, dw=boxW-GAP, dh=boxH-GAP;
+      ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
+    }
+  }
+}
+// **1) prepareScatterObjs 함수**
+function prepareScatterObjs() {
+  scatterObjs = [];
+  let arr = scatterRegion.imagesets[scatterSetIdx];
+  let boxW = fit.dw / gridSize, boxH = fit.dh / pixelData.height;
+  let xs = scatterRegion.boxes.map(b => fit.dx + b[0] * boxW + boxW/2);
+  let ys = scatterRegion.boxes.map(b => fit.dy + b[1] * boxH + boxH/2);
+  let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
+  let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+  let minR = 200, maxR = Math.min(canvas.width, canvas.height) * 0.3;
+  let angle0 = Math.random() * Math.PI * 2;
+
+  for (let i = 0; i < arr.length; i++) {
+    let { similarity, prompt, description, url } = arr[i];
+    let angle = angle0 + i * (2*Math.PI/arr.length);
+    let radius = minR + (1 - similarity) * (maxR - minR);
+    scatterObjs.push({
+      x: cx, y: cy,
+      tx: cx + Math.cos(angle) * radius,
+      ty: cy + Math.sin(angle) * radius,
+      alpha: 0, size: 40,
+      similarity, prompt, description, url
+    });
+  }
+}
+
+
+
+function animateScatter(){
+  let animDone = true;
+  for(let o of scatterObjs){
+    if(o.alpha < 1){ o.alpha += 0.12; animDone = false; }
+    // x, y가 목표로 다가가도록 이동
+    o.x += (o.tx - o.x) * 0.38;
+    o.y += (o.ty - o.y) * 0.38;
+    // 남은 거리가 1픽셀 이상이면 아직 이동중
+    if(Math.abs(o.x - o.tx) > 1 || Math.abs(o.y - o.ty) > 1) animDone = false;
+  }
+  drawScatterView();
+  if(!animDone) requestAnimationFrame(animateScatter);
+}
+
+const tempCanvas = document.createElement('canvas');
+const tempCtx = tempCanvas.getContext('2d');
+
+
+// **2) drawScatterView 함수**
+function drawScatterView(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // 중앙 컬러박스 유지
+  let boxW = fit.dw/gridSize, boxH = fit.dh/pixelData.height;
+  if(scatterRegion){
+    for(const [x,y] of scatterRegion.boxes){
+      let idx = (y*gridSize + x)*4;
+      let r = pixelData.data[idx],
+          g = pixelData.data[idx+1],
+          b = pixelData.data[idx+2],
+          a = pixelData.data[idx+3]/255;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(fit.dx + x*boxW, fit.dy + y*boxH, boxW-GAP, boxH-GAP);
+    }
+  }
+
+  // scatter 컬러박스
+  for (let o of scatterObjs) {
+    let c;
+    let s = o.similarity;
+    if (s < 0.2)          c = '#45301E';
+    else if (s < 0.4)     c = '#5A4020';
+    else if (s < 0.6)     c = '#A5773C';
+    else if (s < 0.8)     c = '#BF9B6E';
+    else                  c = '#CEB89F';
+
+    ctx.globalAlpha = o.alpha;
+    ctx.fillStyle = c;
+    ctx.fillRect(o.x - o.size/2, o.y - o.size/2, o.size, o.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+
+
+function scatterMove(e){
+  if(viewState !== 'scatter' || !scatterObjs.length) { tooltip.style.display = 'none'; return; }
+  const rect=canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  scatterHoverIdx=-1;
+  for(let i=0;i<scatterObjs.length;i++){
+    let o = scatterObjs[i];
+    let w = o.size, h = o.size;
+    if(mx > o.x-w/2 && mx < o.x+w/2 && my > o.y-h/2 && my < o.y+h/2)
+      scatterHoverIdx = i;
+  }
+  if(scatterHoverIdx >= 0){
+    let d = scatterObjs[scatterHoverIdx];
+    tooltip.innerHTML = `
+      <img src="${d.url}">
+      <div style="display:flex; flex-direction:column;">
+        <b>${d.prompt}</b>
+        <div style="margin-top:8px;">${d.description}</div>
+      </div>
+    `;
+    tooltip.style.display = 'flex';
+
+    // 위치계산은 그대로!
+    let o = scatterObjs[scatterHoverIdx];
+    let cx = o.x + rect.left, cy = o.y + rect.top;
+    let winW = window.innerWidth, winH = window.innerHeight;
+    let tipWidth = tooltip.offsetWidth || 420, tipHeight = tooltip.offsetHeight || 260, tipMargin = 10;
+    let left = cx + o.size/2 + 14;
+    let top  = cy - o.size/2 + 24;
+    if(left + tipWidth > winW - tipMargin)
+      left = cx - o.size/2 - tipWidth - 10;
+    if(left < tipMargin) left = tipMargin;
+    if(top + tipHeight > winH - tipMargin)
+      top = winH - tipHeight - tipMargin;
+    if(top < tipMargin) top = tipMargin;
+    tooltip.style.left = left+'px';
+    tooltip.style.top  = top+'px';
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+  } else {
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(() => { if(!isTooltipActive) tooltip.style.display='none'; }, 700);
+  }
+}
+
+
+
+function onScroll() {
+  const sy = window.scrollY, windowH = window.innerHeight, totalH = document.body.scrollHeight - windowH;
+  let idx = Math.floor((sy/totalH)*resolutions.length); if(idx<0)idx=0;if(idx>=resolutions.length)idx=resolutions.length-1;
+  let nextRes = resolutions[idx];
+  if(viewState==='scatter'){
+    if(nextRes!==gridSize){
+      viewState='grid'; scatterRegion = null; hoveredBox = null; hoveredRegion = null;
+      scatterSetIdx = 0; revealIdx = 0; showColorBox = false;
+      currentRes = gridSize;
+      pixelData = getPixelData(currentRes);
+      drawGrid(currentRes);
+      canvas.style.cursor = '';
+      tooltip.style.display = 'none';
+      return;
+    }
+    return;
+  }
+  currentRes = nextRes;
+  pixelData = getPixelData(currentRes);
+  drawGrid(currentRes);
+}
+function onMouseMove(e){
+  if(viewState === 'scatter'){ scatterMove(e); return; }
+  if(currentRes!==gridSize) {
+    hoveredRegion = null; hoveredBox = null; drawGrid(currentRes); return;
+  }
+  const rect = canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const cols = gridSize, rows = pixelData.height;
+  const boxW = fit.dw / cols, boxH = fit.dh / rows;
+  let col = Math.floor((mx-fit.dx)/boxW), row = Math.floor((my-fit.dy)/boxH);
+  hoveredBox = (col>=0&&row>=0&&col<cols&&row<rows)?[col,row]:null;
+  hoveredRegion = null;
+  for(let r of regions) for(let [x,y] of r.boxes) if(x===col&&y===row) hoveredRegion=r;
+  drawGrid(currentRes);
+}
+function onMouseLeave(){
+  hoveredBox=null; hoveredRegion=null; scatterHoverIdx=-1;
+  if(viewState==='scatter') {
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(()=>{ if(!isTooltipActive) tooltip.style.display='none'; }, 700);
+  }
+  if(viewState==='grid') drawGrid(currentRes);
+}
+function onClick(e) {
+  if (viewState === 'scatter') {
+    const rect = canvas.getBoundingClientRect(),
+          mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let boxW = fit.dw / gridSize, boxH = fit.dh / pixelData.height;
+    let xs = scatterRegion.boxes.map(b => fit.dx + b[0] * boxW),
+        ys = scatterRegion.boxes.map(b => fit.dy + b[1] * boxH);
+    let regionRect = {
+      x1: Math.min(...xs), x2: Math.max(...xs) + boxW - GAP,
+      y1: Math.min(...ys), y2: Math.max(...ys) + boxH - GAP
+    };
+    if (mx >= regionRect.x1 && mx <= regionRect.x2 && my >= regionRect.y1 && my <= regionRect.y2) {
+      // 1. 이미지 세트 순환 (main part, color, style)
+      scatterSetIdx = (scatterSetIdx + 1) % scatterRegion.imagesets.length;
+
+      // 2. 컬러박스 해상도/원본 순환
+      if (revealIdx < maxRevealStep) {
+        revealIdx++;
+        showColorBox = false;
+      } else {
+        showColorBox = !showColorBox; // 7번째 이후부터 원본/컬러박스 토글
+      }
+      prepareScatterObjs();
+      animateScatter();
+      drawScatterView();
+    }
+    return;
+  }
+  if (viewState === 'grid' && currentRes === gridSize && hoveredRegion) {
+    viewState = 'scatter';
+    scatterRegion = hoveredRegion;
+    scatterSetIdx = 0;
+    revealIdx = 0;
+    showColorBox = false;
+    prepareScatterObjs();
+    animateScatter();
+    drawScatterView();
+  }
+}
+
+
+image.onload = function(){
+  canvas.width=1200; canvas.height=1000;
+  calcFit();
+  pixelData = getPixelData(currentRes);
+  drawGrid(currentRes);
+  window.addEventListener('scroll', onScroll);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseleave', onMouseLeave);
+  canvas.addEventListener('click', onClick);
+};
+</script>
+</body>
+</html>

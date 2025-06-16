@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pixel Grid → Scatter + Tooltip (스크롤 완벽!)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    html, body {margin:0; padding:0; height:2000vh; background:#111;}
+    canvas {position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:#111; cursor:pointer; z-index:1;}
+    #tooltip {
+  position: fixed;
+  background: #ffffff33;
+  color: #2be401;
+  border-radius: 16px;
+  padding: 18px 24px 18px 18px;
+  box-shadow: 0 4px 18px rgba(0, 255, 255, 0.755);
+  display: none;
+  font-size: 16px;
+  z-index: 10;
+  width: 420px; max-width: 90vw; min-width: 180px;
+  min-height: 60px; max-height: 320px;  /* 핵심! */
+  overflow: visible;
+  pointer-events: auto; transition: opacity 0.2s;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 24px;
+  box-sizing: border-box;
+}
+#tooltip img {
+  display: block;
+  width: 130px;   /* 약간 줄여줌 */
+  min-width: 90px;
+  max-width: 130px;
+  height: auto;
+  max-height: 184px;  /* 최대 높이 제한! */
+  border-radius: 7px;
+  margin: 0;
+  object-fit: cover;
+  box-shadow: 0 1px 4px #0002;
+  background: #fff;
+}
+#tooltip .tooltip-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  max-height: 184px;   /* 이미지와 맞춤 */
+  overflow: auto;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+    canvas { will-change: transform; }
+  </style>
+</head>
+<body>
+ <a href="index.html" style="position:fixed; top:24px; left:24px; font-size:18px; color:#ffffff77; text-decoration:none; z-index:9999; font-family:'IBM Plex Mono', monospace;">← mainpage</a>
+
+<canvas id="canvas" width="1200" height="1000"></canvas>
+<div id="tooltip"></div>
+<script>
+
+// 대표색 뽑는 함수 (img 엘리먼트, 콜백)
+function getAverageColor(img, callback) {
+  // 이미지가 아직 로딩 안 됐으면 나중에 호출 (재귀)
+  if (!img.complete) {
+    img.onload = () => getAverageColor(img, callback);
+    img.onerror = () => callback([200,200,200]);
+    return;
+  }
+  let w = 12, h = 12;
+  let canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  let ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  let data = ctx.getImageData(0, 0, w, h).data;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i+1];
+    b += data[i+2];
+  }
+  let len = data.length / 4;
+  r = Math.round(r / len);
+  g = Math.round(g / len);
+  b = Math.round(b / len);
+  callback([r, g, b]);
+}
+
+// rgb → hsl
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  let max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max + min) / 2;
+  if(max === min){
+    h = s = 0;
+  } else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch(max){
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h*360, s*100, l*100];
+}
+
+// hsl → rgb
+function hslToRgb(h, s, l) {
+  h /= 360; s /= 100; l /= 100;
+  let r, g, b;
+  if(s === 0){
+    r = g = b = l;
+  } else {
+    function hue2rgb(p, q, t){
+      if(t < 0) t += 1;
+      if(t > 1) t -= 1;
+      if(t < 1/6) return p + (q - p) * 6 * t;
+      if(t < 1/2) return q;
+      if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    }
+    let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    let p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+}
+
+
+
+
+const image = new Image(); image.src = 'monkey.png'; // 이미지 경로!
+const gridSize = 6, FRAME = 600, GAP = 0.5;
+const resolutions = [256,128,64,32,16,6];
+let currentRes = resolutions[0];
+
+
+
+const imagesetsBottom = [
+  [ // main-part
+  {
+    url: 'cock/cock10.jpeg',
+    similarity: 0.96,
+    prompt: "Tall cocktail with crushed ice and passionfruit, layered yellow and amber tones, surrounded by floral tropical decor",
+    description: "A rich, exotic fruit drink glowing with texture and jungle-inspired elegance."
+  },
+  {
+    url: 'cock/cock08.jpeg',
+    similarity: 0.31,
+    prompt: "Retro summer scene with octopus bartender and drinks on table, vintage poster style with playful marine theme",
+    description: "A humorous seaside fantasy featuring cocktails and character storytelling in pop style."
+  },
+  {
+    url: 'cock/cock02.jpeg',
+    similarity: 0.95,
+    prompt: "Bright tropical cocktail on a beachside table with a cocktail umbrella and ocean view, pink-orange hues under sunlight",
+    description: "A sunlit tropical cocktail scene with warm tones and playful garnish, ideal for vacation moods."
+  },
+  {
+    url: 'cock/cock07.jpeg',
+    similarity: 0.48,
+    prompt: "Minimalistic yellow banana cocktail with whipped topping, arranged on soft beige background with clean shadows",
+    description: "A smooth dessert-like drink with creamy tones and soft elegance."
+  },
+  {
+    url: 'cock/cock01.jpeg',
+    similarity: 0.98,
+    prompt: "Layered cocktail with green-to-orange gradient, crushed ice, cherry and citrus garnish, vivid lighting on a blue backdrop",
+    description: "A high-contrast drink with tropical fruit and crushed ice, evoking summer freshness and vibrant taste."
+  },
+  {
+    url: 'cock/cock05.jpeg',
+    similarity: 0.72,
+    prompt: "Whimsical cartoonish cocktail in a multicolor fantasy forest, dual-color drink with floating character",
+    description: "A magical surreal drink scene with playful lighting and storytelling charm."
+  },
+  {
+    url: 'cock/cock04.jpeg',
+    similarity: 0.93,
+    prompt: "Golden yellow cocktail with a cherry and pineapple slice garnish, set against a minimal green wall in soft shadow",
+    description: "A refined tropical drink with bright citrus tones and fruit-topped finish, radiating calm summer elegance."
+  },
+  {
+    url: 'cock/cock09.jpeg',
+    similarity: 0.58,
+    prompt: "Classic martini with cocktail umbrella, minimalist setting on a gradient background with crisp reflection",
+    description: "A clean and modern composition showcasing cocktail elegance and restraint."
+  },
+  {
+    url: 'cock/cock06.jpeg',
+    similarity: 0.89,
+    prompt: "Tall glass of crushed-ice cocktail glowing under party lights, bright pink liquid with strawberry garnish",
+    description: "A party-ready fruity cocktail sparkling with vivid color and nighttime energy."
+  },
+  {
+    url: 'cock/cock03.jpeg',
+    similarity: 0.67,
+    prompt: "Elegant green drink set in a lush jungle background, reflective glass, simple lime garnish",
+    description: "A cool green jungle-inspired cocktail emphasizing nature and serenity."
+  }
+  ],
+
+
+  [ // color
+       {
+    url: 'c_color/color01.jpeg',
+    similarity: 0.26,
+    prompt: "Vibrant orange cocktail with a cool blue straw and citrus garnish, isolated on a moody cyan background",
+    description: "A fresh and tangy cocktail with high contrast and saturated citrus tones."
+  },
+  {
+    url: 'c_color/color08.jpeg',
+    similarity: 0.97,
+    prompt: "Sunny yellow pina colada on a tropical beach with palm trees and ocean backdrop",
+    description: "Classic tropical palette with golden tones and exotic relaxation."
+  },
+  {
+    url: 'c_color/color04.jpeg',
+    similarity: 0.21,
+    prompt: "Minimal pineapple drink on a dusty pink background with soft natural shadow",
+    description: "Muted, minimalist color scheme evoking warmth and stillness."
+  },
+  {
+    url: 'c_color/color10.jpeg',
+    similarity: 0.94,
+    prompt: "Golden mango cocktails under bright sky, with sunlight and tropical leaves",
+    description: "Bright, juicy palette with high-energy tropical flair and clean light."
+  },
+  {
+    url: 'c_color/color07.jpeg',
+    similarity: 0.60,
+    prompt: "Floating fruit garnishes over sepia-toned background, soft light and matte shadows",
+    description: "Light, delicate fruit tones in a still-life composition with calm warmth."
+  },
+  
+  {
+    url: 'c_color/color03.jpeg',
+    similarity: 0.12,
+    prompt: "Bright coral-pink tropical drinks with palm shadows and neon sunset glow, 80s Miami mood",
+    description: "A retro tropical aesthetic with vivid lighting and paradise energy."
+  },
+  {
+    url: 'c_color/color02.jpeg',
+    similarity: 0.17,
+    prompt: "Pastel pink guava cocktail duo under golden clouds, soft sunset gradient sky, dreamy palette",
+    description: "Romantic, nostalgic atmosphere with a warm pastel sky and gentle fruit hues."
+  },
+  {
+    url: 'c_color/color06.jpeg',
+    similarity: 0.76,
+    prompt: "Vintage teal cocktail on hand-drawn textured background, pastel green tones",
+    description: "Subdued and artistic with an analog print mood and heritage hues."
+  },
+  {
+    url: 'c_color/color05.jpeg',
+    similarity: 0.07,
+    prompt: "Colorful layered drink glowing in club lighting, crowd background, high energy",
+    description: "Electric nightlife palette with saturated purples and glowing highlights."
+  },
+
+  {
+    url: 'c_color/color11.jpeg',
+    similarity: 0.91,
+    prompt: "Whimsical painted cocktail beach scene with stylized palm trees and clouds",
+    description: "Cartoon-like tropical dreamland with pastel skies and summer fantasy."
+  },
+  {
+    url: 'c_color/color09.jpeg',
+    similarity: 0.96,
+    prompt: "Crystal-clear cocktail splash with embedded berries on a deep blue background",
+    description: "Cool, refreshing mood with crisp contrast and lively composition."
+  }
+  ],
+
+
+  [ // style
+    {
+    "url": "c_style/style01.jpeg",
+    "similarity": 0.27,
+    "prompt": "Whimsical fruit cocktail illustration with overlapping slices in a vintage goblet on orange background",
+    "description": "A playful hand-drawn composition with surreal garnish arrangements."
+  },
+  {
+    "url": "c_style/style02.jpeg",
+    "similarity": 0.22,
+    "prompt": "Geometric cubist-inspired illustration of a cocktail glass in strong shadow and abstract form",
+    "description": "Stylized and architectural, evoking 20th-century graphic poster art."
+  },
+  {
+    "url": "c_style/style03.jpeg",
+    "similarity": 0.34,
+    "prompt": "Vector flat design of multiple colorful cocktail glasses with tropical fruit garnishes on yellow",
+    "description": "A vibrant 2D flat illustration with strong contrast and playful tones."
+  },
+  {
+    "url": "c_style/style04.jpeg",
+    "similarity": 0.91,
+    "prompt": "Photorealistic cocktail with glowing orange garnish under moonlight at tropical beach",
+    "description": "A cinematic and moody cocktail scene with hyperreal lighting."
+  },
+  {
+    "url": "c_style/style05.jpeg",
+    "similarity": 0.29,
+    "prompt": "Painterly watercolor style cocktail illustration with floral garnish and artistic splash",
+    "description": "A loose, expressive rendering that feels hand-painted and dreamlike."
+  },
+  {
+    "url": "c_style/style06.jpeg",
+    "similarity": 0.88,
+    "prompt": "Minimalist high-end cocktail photo with white backdrop and strawberry garnish",
+    "description": "Clean, high-clarity product shot with luxury brand aesthetics."
+  },
+  {
+    "url": "c_style/style07.jpeg",
+    "similarity": 0.25,
+    "prompt": "Pop-art inspired digital drawing of a cocktail glass with purple gradient and palm tree motif",
+    "description": "Bold and graphic, evoking 1980s Miami retro themes."
+  },
+  {
+    "url": "c_style/style08.jpeg",
+    "similarity": 0.43,
+    "prompt": "Stylized neon cocktail art with geometric elements and glowing limes",
+    "description": "A vivid retro illustration with 80s color palette and vector energy."
+  },
+  {
+    "url": "c_style/style09.jpeg",
+    "similarity": 0.93,
+    "prompt": "Close-up photography of a gin-based cocktail with fresh herbs on wooden surface",
+    "description": "Elegant, soft-light cocktail captured with natural shadows and textures."
+  },
+  {
+    "url": "c_style/style10.jpeg",
+    "similarity": 0.84,
+    "prompt": "Crisp lifestyle photography of spritz cocktail in clear glass, seaside patio background",
+    "description": "Fresh and atmospheric beachside drink with leisure aesthetic."
+  },
+  {
+    "url": "c_style/style11.jpeg",
+    "similarity": 0.06,
+    "prompt": "Ultra-detailed macro photo of gemstone cocktail in crystalline glass with glowing cherry on top",
+    "description": "A luxurious and surreal editorial shot, blending realism and dreamlike sparkle."
+  }
+  ]
+];
+
+const regions = [
+  {
+    name: "음료수",
+    boxes: [ [3,3], [3,4],[3,5],[3,6],[4,3],[4,4],[4,5],[4,6],[4,7],[5,3], [5,4], [5,5], [5,6]],
+    imagesets: imagesetsBottom
+  }
+];
+
+const revealSteps = [6,12,18,24,32,44,56,72,96,128,180,256,512,'original'];
+const maxRevealStep = revealSteps.length-1;
+let canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+let pixelData = null, fit = {}, hoveredBox = null, hoveredRegion = null;
+let scatterRegion = null, viewState = 'grid', scatterObjs=[], scatterSetIdx=0, revealIdx=0, showColorBox=false, scatterHoverIdx=-1;
+let tooltip = document.getElementById('tooltip'), tooltipTimer = null, isTooltipActive = false;
+
+tooltip.addEventListener('mouseenter', () => {
+  isTooltipActive = true;
+  if (tooltipTimer) clearTimeout(tooltipTimer);
+});
+tooltip.addEventListener('mouseleave', () => {
+  isTooltipActive = false;
+  if (tooltipTimer) clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(() => {
+    if (!isTooltipActive) tooltip.style.display = 'none';
+  }, 700);
+});
+
+function calcFit(){
+  let iw=image.width, ih=image.height, aspect=iw/ih, dw=FRAME, dh=FRAME;
+  if(aspect>1){ dh=FRAME/aspect; } else{ dw=FRAME*aspect; }
+  fit = { sx:0, sy:0, sw:iw, sh:ih, dx:(canvas.width-FRAME)/2+(FRAME-dw)/2, dy:(canvas.height-FRAME)/2+(FRAME-dh)/2, dw, dh };
+}
+function getPixelData(res){
+  let temp = document.createElement('canvas');
+  temp.width = res;
+  temp.height = Math.round(res * image.height/image.width);
+  temp.getContext('2d').drawImage(image,0,0,image.width,image.height,0,0,temp.width,temp.height);
+  return temp.getContext('2d').getImageData(0,0,temp.width,temp.height);
+}
+function drawGrid(res){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle='#111'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const cols = res, rows = pixelData.height;
+  const boxW = fit.dw / cols, boxH = fit.dh / rows;
+  for(let y=0; y<rows; y++) for(let x=0; x<cols; x++){
+    let idx=(y*cols+x)*4, r=pixelData.data[idx],g=pixelData.data[idx+1],b=pixelData.data[idx+2],a=pixelData.data[idx+3]/255;
+    let gap = (res===gridSize?GAP:0), opacity=1;
+    if(res===gridSize && hoveredRegion){
+      let inRegion = hoveredRegion.boxes.some(([bx,by])=>bx===x&&by===y);
+      opacity = inRegion ? 1 : 0.32;
+    }
+    ctx.globalAlpha=opacity;
+    ctx.fillStyle=`rgba(${r},${g},${b},${a})`;
+    ctx.fillRect(fit.dx+x*boxW, fit.dy+y*boxH, boxW-gap, boxH-gap);
+  }
+  ctx.globalAlpha=1;
+  if(res===gridSize && hoveredRegion){
+    for(const [x,y] of hoveredRegion.boxes){
+      ctx.save(); ctx.globalAlpha=1;
+      let sx = image.width/gridSize*x, sy = image.height/pixelData.height*y;
+      let sw = image.width/gridSize, sh = image.height/pixelData.height;
+      let dx = fit.dx+x*boxW, dy = fit.dy+y*boxH, dw=boxW-GAP, dh=boxH-GAP;
+      ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
+    }
+  }
+}
+// **1) prepareScatterObjs 함수**
+function prepareScatterObjs() {
+  scatterObjs = [];
+  let arr = scatterRegion.imagesets[scatterSetIdx];
+  let boxW = fit.dw / gridSize, boxH = fit.dh / pixelData.height;
+  let xs = scatterRegion.boxes.map(b => fit.dx + b[0] * boxW + boxW/2);
+  let ys = scatterRegion.boxes.map(b => fit.dy + b[1] * boxH + boxH/2);
+  let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
+  let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+  let minR = 200, maxR = Math.min(canvas.width, canvas.height) * 0.4;
+  let angle0 = Math.random() * Math.PI * 2;
+
+  for (let i = 0; i < arr.length; i++) {
+    let { similarity, prompt, description, url } = arr[i];
+    let angle = angle0 + i * (2*Math.PI/arr.length);
+    let radius = minR + (1 - similarity) * (maxR - minR);
+    scatterObjs.push({
+      x: cx, y: cy,
+      tx: cx + Math.cos(angle) * radius,
+      ty: cy + Math.sin(angle) * radius,
+      alpha: 0, size: 40,
+      similarity, prompt, description, url
+    });
+  }
+}
+
+
+
+function animateScatter(){
+  let animDone = true;
+  for(let o of scatterObjs){
+    if(o.alpha < 1){ o.alpha += 0.12; animDone = false; }
+    // x, y가 목표로 다가가도록 이동
+    o.x += (o.tx - o.x) * 0.38;
+    o.y += (o.ty - o.y) * 0.38;
+    // 남은 거리가 1픽셀 이상이면 아직 이동중
+    if(Math.abs(o.x - o.tx) > 1 || Math.abs(o.y - o.ty) > 1) animDone = false;
+  }
+  drawScatterView();
+  if(!animDone) requestAnimationFrame(animateScatter);
+}
+
+const tempCanvas = document.createElement('canvas');
+const tempCtx = tempCanvas.getContext('2d');
+
+
+// **2) drawScatterView 함수**
+function drawScatterView(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // 중앙 컬러박스 유지
+  let boxW = fit.dw/gridSize, boxH = fit.dh/pixelData.height;
+  if(scatterRegion){
+    for(const [x,y] of scatterRegion.boxes){
+      let idx = (y*gridSize + x)*4;
+      let r = pixelData.data[idx],
+          g = pixelData.data[idx+1],
+          b = pixelData.data[idx+2],
+          a = pixelData.data[idx+3]/255;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(fit.dx + x*boxW, fit.dy + y*boxH, boxW-GAP, boxH-GAP);
+    }
+  }
+
+  // scatter 컬러박스
+  for (let o of scatterObjs) {
+    let c;
+    let s = o.similarity;
+    if (s < 0.2)          c = '#FFECB3';
+    else if (s < 0.4)     c = '#A9F197';
+    else if (s < 0.6)     c = '#61E49C';
+    else if (s < 0.8)     c = '#36C4AD';
+    else                  c = '#00989C';
+
+    ctx.globalAlpha = o.alpha;
+    ctx.fillStyle = c;
+    ctx.fillRect(o.x - o.size/2, o.y - o.size/2, o.size, o.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+
+
+function scatterMove(e){
+  if(viewState !== 'scatter' || !scatterObjs.length) { tooltip.style.display = 'none'; return; }
+  const rect=canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  scatterHoverIdx=-1;
+  for(let i=0;i<scatterObjs.length;i++){
+    let o = scatterObjs[i];
+    let w = o.size, h = o.size;
+    if(mx > o.x-w/2 && mx < o.x+w/2 && my > o.y-h/2 && my < o.y+h/2)
+      scatterHoverIdx = i;
+  }
+  if(scatterHoverIdx >= 0){
+    let d = scatterObjs[scatterHoverIdx];
+    tooltip.innerHTML = `
+      <img src="${d.url}">
+      <div style="display:flex; flex-direction:column;">
+        <b>${d.prompt}</b>
+        <div style="margin-top:8px;">${d.description}</div>
+      </div>
+    `;
+    tooltip.style.display = 'flex';
+
+    // 위치계산은 그대로!
+    let o = scatterObjs[scatterHoverIdx];
+    let cx = o.x + rect.left, cy = o.y + rect.top;
+    let winW = window.innerWidth, winH = window.innerHeight;
+    let tipWidth = tooltip.offsetWidth || 420, tipHeight = tooltip.offsetHeight || 260, tipMargin = 10;
+    let left = cx + o.size/2 + 14;
+    let top  = cy - o.size/2 + 24;
+    if(left + tipWidth > winW - tipMargin)
+      left = cx - o.size/2 - tipWidth - 10;
+    if(left < tipMargin) left = tipMargin;
+    if(top + tipHeight > winH - tipMargin)
+      top = winH - tipHeight - tipMargin;
+    if(top < tipMargin) top = tipMargin;
+    tooltip.style.left = left+'px';
+    tooltip.style.top  = top+'px';
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+  } else {
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(() => { if(!isTooltipActive) tooltip.style.display='none'; }, 700);
+  }
+}
+
+
+
+function onScroll() {
+  const sy = window.scrollY, windowH = window.innerHeight, totalH = document.body.scrollHeight - windowH;
+  let idx = Math.floor((sy/totalH)*resolutions.length); if(idx<0)idx=0;if(idx>=resolutions.length)idx=resolutions.length-1;
+  let nextRes = resolutions[idx];
+  if(viewState==='scatter'){
+    if(nextRes!==gridSize){
+      viewState='grid'; scatterRegion = null; hoveredBox = null; hoveredRegion = null;
+      scatterSetIdx = 0; revealIdx = 0; showColorBox = false;
+      currentRes = gridSize;
+      pixelData = getPixelData(currentRes);
+      drawGrid(currentRes);
+      canvas.style.cursor = '';
+      tooltip.style.display = 'none';
+      return;
+    }
+    return;
+  }
+  currentRes = nextRes;
+  pixelData = getPixelData(currentRes);
+  drawGrid(currentRes);
+}
+function onMouseMove(e){
+  if(viewState === 'scatter'){ scatterMove(e); return; }
+  if(currentRes!==gridSize) {
+    hoveredRegion = null; hoveredBox = null; drawGrid(currentRes); return;
+  }
+  const rect = canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const cols = gridSize, rows = pixelData.height;
+  const boxW = fit.dw / cols, boxH = fit.dh / rows;
+  let col = Math.floor((mx-fit.dx)/boxW), row = Math.floor((my-fit.dy)/boxH);
+  hoveredBox = (col>=0&&row>=0&&col<cols&&row<rows)?[col,row]:null;
+  hoveredRegion = null;
+  for(let r of regions) for(let [x,y] of r.boxes) if(x===col&&y===row) hoveredRegion=r;
+  drawGrid(currentRes);
+}
+function onMouseLeave(){
+  hoveredBox=null; hoveredRegion=null; scatterHoverIdx=-1;
+  if(viewState==='scatter') {
+    if(tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(()=>{ if(!isTooltipActive) tooltip.style.display='none'; }, 700);
+  }
+  if(viewState==='grid') drawGrid(currentRes);
+}
+function onClick(e) {
+  if (viewState === 'scatter') {
+    const rect = canvas.getBoundingClientRect(),
+          mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let boxW = fit.dw / gridSize, boxH = fit.dh / pixelData.height;
+    let xs = scatterRegion.boxes.map(b => fit.dx + b[0] * boxW),
+        ys = scatterRegion.boxes.map(b => fit.dy + b[1] * boxH);
+    let regionRect = {
+      x1: Math.min(...xs), x2: Math.max(...xs) + boxW - GAP,
+      y1: Math.min(...ys), y2: Math.max(...ys) + boxH - GAP
+    };
+    if (mx >= regionRect.x1 && mx <= regionRect.x2 && my >= regionRect.y1 && my <= regionRect.y2) {
+      // 1. 이미지 세트 순환 (main part, color, style)
+      scatterSetIdx = (scatterSetIdx + 1) % scatterRegion.imagesets.length;
+
+      // 2. 컬러박스 해상도/원본 순환
+      if (revealIdx < maxRevealStep) {
+        revealIdx++;
+        showColorBox = false;
+      } else {
+        showColorBox = !showColorBox; // 7번째 이후부터 원본/컬러박스 토글
+      }
+      prepareScatterObjs();
+      animateScatter();
+      drawScatterView();
+    }
+    return;
+  }
+  if (viewState === 'grid' && currentRes === gridSize && hoveredRegion) {
+    viewState = 'scatter';
+    scatterRegion = hoveredRegion;
+    scatterSetIdx = 0;
+    revealIdx = 0;
+    showColorBox = false;
+    prepareScatterObjs();
+    animateScatter();
+    drawScatterView();
+  }
+}
+
+
+image.onload = function(){
+  canvas.width=1200; canvas.height=1000;
+  calcFit();
+  pixelData = getPixelData(currentRes);
+  drawGrid(currentRes);
+  window.addEventListener('scroll', onScroll);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseleave', onMouseLeave);
+  canvas.addEventListener('click', onClick);
+};
+</script>
+</body>
+</html>

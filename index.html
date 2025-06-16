@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Main Screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: white;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    align-items: center;
+    padding-top: 20px;
+  }
+  .category-row {
+    position: relative;
+    width: 100vw;
+    height: 20vh;
+    padding: 0 90px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 90px;
+    overflow: visible;
+  }
+  .image-container {
+    position: relative;
+    z-index: 5;
+    width: auto;
+    max-height: 100%;
+    max-width: 200px;
+    padding-top: 20px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .image-container img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: contain;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: default;
+    border-radius: 0;
+  }
+
+.hover-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0);
+  color: rgba(0, 0, 0, 0.723);
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 8px;
+  line-height: 1.5;
+  max-width: 120vw;
+  width: fit-content;
+  min-width: 240px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: 'IBM Plex Mono', monospace;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+}
+
+.image-container:hover .hover-label {
+  opacity: 1;
+}
+
+
+  .image-container:hover img,
+  .image-container img.clickable {
+    mix-blend-mode: multiply;
+  }
+  .image-container:hover img {
+    transform: scale(1.5);
+    opacity: 0.9;
+    box-shadow: 0 2px 10px rgba(211, 211, 211, 0.731);
+  }
+  .image-container img.clickable {
+    cursor: pointer;
+  }
+  .bg-strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 100vw;
+    z-index: 1;
+    transform: translateX(-100%);
+    animation: slide-in 0.4s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+    will-change: transform;
+    mix-blend-mode: darken;
+  }
+  .bg-strip.out {
+    animation: slide-out 0.4s forwards ease-in;
+  }
+  @keyframes slide-in {
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes slide-out {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+  .label-strip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 34px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 20px;
+    color: white;
+    background-color: transparent;
+    z-index: 4;
+    line-height: 34px;
+    font-family: 'IBM Plex Mono', monospace;
+    animation: fade-in 0.3s ease 0.3s forwards;
+    opacity: 0;
+  }
+  @keyframes fade-in {
+    to {
+      opacity: 1;
+    }
+  }
+</style>
+
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="category-row" data-category="FOOD">
+      <div class="image-container">
+      <img class="clickable" src="Main_food/food01.jpg" />
+      <div class="img-label hover-label">
+        Cottage Cheese Sweet Potato and Beef Bowl, realistic, hyper detailed, IMG_1138.CR2, --chaos 50 --ar 16:9 --profile 8loubr2 --stylize 500 --v 7
+      </div>
+    </div>
+      <div class="image-container"><img src="Main_food/food03.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food02.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food04.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food05.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food06.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food07.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food08.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food09.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_food/food10.jpg" onclick="goToScroll()" /></div>
+    </div>
+
+     <div class="category-row" data-category="SPACE">
+      <div class="image-container"><img src="Main_space/space01.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space02.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space03.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space04.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container">
+        <img class="clickable" src="Main_space/space05.jpg" />
+        <div class="img-label hover-label">the ceiling has been collapse due to a bomb explosion effect --raw --stylize 750 --v 7</div>
+      </div>
+       <div class="image-container"><img src="Main_space/space06.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space07.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space08.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space09.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_space/space10.jpg" onclick="goToScroll()" /></div>
+    </div>
+
+    <div class="category-row" data-category="ANIMAL">
+      <div class="image-container"><img src="Main_animal/animal01.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal02.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal03.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal04.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal05.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal06.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal07.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal08.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_animal/animal09.jpg" onclick="goToScroll()" /></div>
+            <div class="image-container"><img class="clickable" src="Main_animal/animal10.jpg" data-link="animalscroll.html" /><div class="img-label hover-label">a cute chimpanzee smiling widely with visible teeth, wearing large black glasses and a bright Hawaiian shirt, holding a colorful decorated tropical cocktail with fruit and umbrella, standing on a sunny beach with palm trees and turquoise water, gold wristwatch and a white and gold chain necklace visible under the open shirt, cinematic lighting, DSLR photo style, ultra-detailed, vibrant colors --stylize 750 --v 7 </div></div>
+    </div>
+   
+    <div class="category-row" data-category="PERSON">
+      <div class="image-container"><img src="Main_person/person01.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img class="clickable" src="Main_person/person02.jpg" data-link="personscroll.html" /><div class="img-label hover-label">The Budding Businessman Name Warren Buffett Age 13 Time 1943 Place Omaha neighborhood Setting A sunny street lined with houses and trees the sound of cicadas in the background Attire A cap and a neat casual outfit Warren's Expression Determined yet nervous going door-to-door selling his newspaper routes Related Characters' Actions and Expressions Neighbors greet him with warm interest some nodding in approval acknowledging his hard work --ar 9:16 v7</div></div>
+      <div class="image-container"><img src="Main_person/person03.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person04.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person05.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person06.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person07.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person08.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person09.jpg" onclick="goToScroll()" /></div>
+      <div class="image-container"><img src="Main_person/person10.jpg" onclick="goToScroll()" /></div>
+    </div>
+  </div>
+
+
+  <script>
+    const categoryColors = {
+      FOOD: '#FF5C1E',
+      SPACE: '#CAFF57',
+      ANIMAL: '#378AEA',
+      PERSON: '#5D2AA5'
+    };
+
+    const labelColors = {
+      FOOD: '#FF2104',
+      SPACE: '#85EC07',
+      ANIMAL: '#0C4BD7',
+      PERSON: '#22076B'
+    };
+
+    document.querySelectorAll('.category-row').forEach(row => {
+      const images = row.querySelectorAll('.image-container');
+
+      images.forEach(imgContainer => {
+        const img = imgContainer.querySelector('img');
+        let localBg = null;
+        let localLabel = null;
+
+        img.addEventListener('mouseenter', () => {
+          if (!localBg) {
+            localBg = document.createElement('div');
+            localBg.className = 'bg-strip';
+            localBg.style.backgroundColor = categoryColors[row.dataset.category];
+            row.appendChild(localBg);
+          }
+          if (!localLabel) {
+            localLabel = document.createElement('div');
+            localLabel.className = 'label-strip';
+            localLabel.textContent = row.dataset.category;
+            localLabel.style.backgroundColor = labelColors[row.dataset.category];
+            row.appendChild(localLabel);
+          }
+        });
+
+        img.addEventListener('mouseleave', () => {
+          if (localBg) {
+            localBg.classList.add('out');
+            localBg.addEventListener('animationend', () => {
+              if (localBg?.classList.contains('out')) {
+                localBg.remove();
+                localBg = null;
+              }
+            }, { once: true });
+          }
+          if (localLabel) {
+            localLabel.remove();
+            localLabel = null;
+          }
+        });
+
+        img.addEventListener('click', () => {
+          const link = img.dataset.link;
+          if (link) {
+            window.location.href = link;
+          }
+        });
+      });
+    });
+  </script>
+
+<script>
+document.querySelectorAll('.image-container').forEach(container => {
+  const label = container.querySelector('.hover-label');
+  const img = container.querySelector('img');
+
+  container.addEventListener('mouseenter', () => {
+    const rect = container.getBoundingClientRect();
+    const labelHeight = label.offsetHeight;
+
+    const spaceAbove = rect.top;
+    const spaceBelow = window.innerHeight - rect.bottom;
+
+    // 우선 초기화
+    label.style.top = '';
+    label.style.bottom = '';
+
+    // 위로 띄우거나 아래로
+    if (spaceBelow < labelHeight + 20 && spaceAbove >= labelHeight + 20) {
+      // 아래 공간 부족 → 위로 띄움
+      label.style.bottom = `calc(100% - 100px)`;
+    } else {
+      // 기본적으로 아래로 표시
+      label.style.top = `calc(100% - 50px)`;
+    }
+  });
+
+  container.addEventListener('mouseleave', () => {
+    label.style.top = '';
+    label.style.bottom = '';
+  });
+});
+</script>
+
+
+</body>
+</html>
